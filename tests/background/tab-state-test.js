@@ -165,7 +165,7 @@ describe('TabState', () => {
       assert.equal(tabState.getState(1).annotationCount, testValue);
     });
 
-    it(`resolves last request after a maximum of ${MAX_WAIT_MS}ms when several requests are made in successsion to the service`, async () => {
+    it(`resolves last request after a maximum of ${MAX_WAIT_MS}ms when several requests are made in succession to the service`, async () => {
       const testValue = 42;
       getStub.resolves(testValue);
       const tabState = new TabState({ 1: { state: states.ACTIVE } });
