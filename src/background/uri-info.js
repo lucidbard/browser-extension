@@ -2,9 +2,13 @@ import settings from './settings';
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
+<<<<<<< HEAD
 // The following sites are personal in nature, high potential traffic
 // and URLs don't correspond to identifiable content
 const BLOCKED_HOSTNAMES = new Set([
+=======
+const BLOCK_HOSTNAMES = new Set([
+>>>>>>> 76ad668... Reduce the number of badge requests
   'facebook.com',
   'www.facebook.com',
   'mail.google.com',
@@ -20,7 +24,12 @@ function encodeUriQuery(val) {
  * request endpoint.
  *
  * @param {string} uri
+<<<<<<< HEAD
  * @return {boolean} - false if the URL should not be sent to the "badge" request endpoint
+=======
+ * @return {boolean} - false if the requested URL is not be sent to the "badge" request,
+ *                     otherwise true.
+>>>>>>> 76ad668... Reduce the number of badge requests
  */
 function shouldQueryUri(uri) {
   let url;
