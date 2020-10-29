@@ -183,7 +183,7 @@ export default function TabState(initialState, onchange) {
       pendingAnnotationCountRequests.set(tabId, {
         cancel: () => {
           clearTimeout(timerId);
-          resolve(0);
+          reject('Badge request was cancelled');
         },
         waitMs: wait * 2,
       });
