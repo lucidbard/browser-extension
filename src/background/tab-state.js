@@ -56,6 +56,10 @@ export default function TabState(initialState, onchange) {
   /** @type {Map<number, BadgeRequest>} */
   const pendingAnnotationCountRequests = new Map();
 
+  // This variable contains a map between a URI and the associated annotation count.
+  /** @type {Map<string, number>} */
+  const annotationCountCache = new Map();
+
   this.onchange = onchange || null;
 
   /** Replaces the H state for all tabs with the state data
@@ -159,8 +163,23 @@ export default function TabState(initialState, onchange) {
   this.updateAnnotationCount = async function (tabId, tabUrl) {
     const INITIAL_WAIT_MS = 1000;
     const MAX_WAIT_MS = 3000;
+    const EXPIRATION_CACHE_MS = 3000;
 
     const pendingRequest = pendingAnnotationCountRequests.get(tabId);
+
+    let url;
+    try {
+      url = uriInfo.shouldQueryUri(tabUrl);
+    } catch {
+      return;
+    }
+
+    const annotationCount = annotationCountCache.get(url);
+    if (annotationCount !== undefined) {
+      this.setState(tabId, { annotationCount });
+      return;
+    }
+
     const wait = Math.min(
       pendingRequest?.waitMs ?? INITIAL_WAIT_MS,
       MAX_WAIT_MS
@@ -168,11 +187,21 @@ export default function TabState(initialState, onchange) {
 
     pendingRequest?.cancel();
 
-    const debouncedFetch = new Promise(resolve => {
+    const debouncedFetch = new Promise((resolve, reject) => {
       const timerId = setTimeout(async () => {
-        let count;
+        let count = annotationCountCache.get(url);
+        if (count !== undefined) {
+          resolve(count);
+          return;
+        }
+
         try {
-          count = await uriInfo.getAnnotationCount(tabUrl);
+          count = await uriInfo.fetchAnnotationCount(url);
+          annotationCountCache.set(url, count);
+          setTimeout(
+            () => annotationCountCache.delete(url),
+            EXPIRATION_CACHE_MS
+          );
         } catch {
           count = 0;
         }
@@ -183,14 +212,22 @@ export default function TabState(initialState, onchange) {
       pendingAnnotationCountRequests.set(tabId, {
         cancel: () => {
           clearTimeout(timerId);
-          reject('Badge request was cancelled');
+          reject('Badge request cancelled');
         },
         waitMs: wait * 2,
       });
     });
 
-    const annotationCount = await debouncedFetch;
-    this.setState(tabId, { annotationCount });
+    try {
+      const annotationCount = await debouncedFetch;
+      this.setState(tabId, { annotationCount });
+    } catch (error) {
+      if (error === 'Badge request cancelled') {
+        // Do nothing
+        return;
+      }
+      throw error;
+    }
   };
 
   this.load(initialState || {});

@@ -1,46 +1,15 @@
 import * as uriInfo from '../../src/background/uri-info';
-//import { toResult } from '../promise-util';
 import settings from '../settings.json';
 
 describe('background/uri-info', () => {
-  const badgeURL = `${settings.apiUrl}/badge`;
-  let fetchStub;
-
-  beforeEach(() => {
-    fetchStub = sinon.stub(window, 'fetch').resolves(
-      new Response('{"total": 1}', {
-        status: 200,
-        headers: {},
-      })
-    );
-  });
-
-  afterEach(() => {
-    window.fetch.restore();
-  });
-
-  describe('getAnnotationCount', () => {
-    describe('fetching data from badge endpoint', () => {
-      it('sends the correct fetch request', () => {
-        return uriInfo.getAnnotationCount('http://tabUrl.com').then(() => {
-          assert.equal(fetchStub.callCount, 1);
-          assert.deepEqual(fetchStub.lastCall.args, [
-            badgeURL + '?uri=http%3A%2F%2FtabUrl.com',
-            { credentials: 'include' },
-          ]);
-        });
-      });
-
-      it('urlencodes the URL appropriately', () => {
-        return uriInfo
-          .getAnnotationCount('http://foo.com?bar=baz qüx')
-          .then(() => {
-            assert.equal(fetchStub.callCount, 1);
-            assert.equal(
-              fetchStub.lastCall.args[0],
-              badgeURL + '?uri=http%3A%2F%2Ffoo.com%3Fbar%3Dbaz+q%C3%BCx'
-            );
-          });
+  describe('shouldQueryUri', () => {
+    ['http://.com', 'https://', 'dummy.com'].forEach(badURI => {
+      it('throws for invalid URL', () => {
+        try {
+          uriInfo.shouldQueryUri(badURI);
+        } catch (error) {
+          assert.equal(error.message, "Failed to construct 'URL': Invalid URL");
+        }
       });
     });
 
@@ -49,10 +18,13 @@ describe('background/uri-info', () => {
       'https://facebook.com',
       'https://mail.google.com',
       'http://www.facebook.com/some/page/',
-    ].forEach(badURI => {
-      it('does not send request to API if URI matches blocklist entries', async () => {
-        assert.strictEqual(await uriInfo.getAnnotationCount(badURI), 0);
-        assert.equal(fetchStub.callCount, 0);
+    ].forEach(blockedHostname => {
+      it('throws for blocked hostnames', () => {
+        try {
+          uriInfo.shouldQueryUri(blockedHostname);
+        } catch (error) {
+          assert.equal(error.message, 'Blocked hostname');
+        }
       });
     });
 
@@ -61,31 +33,82 @@ describe('background/uri-info', () => {
       'chrome://newtab',
       'chrome-extension://fadpmhkjbfijelnpfnjmnghgokbppplf/pdfjs/web/viewer.html?file=http%3A%2F%2Fwww.pdf995.com%2Fsamples%2Fpdf.pdf',
       'file://whatever',
-    ].forEach(badURI => {
-      it('does not send request to API if URI does not have an allowed protocol', async () => {
-        assert.strictEqual(await uriInfo.getAnnotationCount(badURI), 0);
-        assert.equal(fetchStub.callCount, 0);
+    ].forEach(blockedProtocol => {
+      it('throws for blocked protocol', () => {
+        try {
+          uriInfo.shouldQueryUri(blockedProtocol);
+        } catch (error) {
+          assert.equal(error.message, 'Blocked protocol');
+        }
       });
     });
 
-    ['https://www.google.com', 'http://www.example.com'].forEach(okURI => {
-      it('sends request to API if URI does not match blocklist entries and has an allowed protocol', async () => {
-        assert.strictEqual(await uriInfo.getAnnotationCount(okURI), 1);
-        assert.equal(fetchStub.callCount, 1);
+    ['https://www.google.com/', 'http://www.example.com/'].forEach(okURI => {
+      it('sends request to API if URI does not match blocklist entries and has an allowed protocol', () => {
+        assert.strictEqual(uriInfo.shouldQueryUri(okURI), okURI);
       });
+    });
+
+    ['https://www.google.com#1', 'https://www.google.com#2'].forEach(okURI => {
+      it('removes the fragment', () => {
+        assert.strictEqual(
+          uriInfo.shouldQueryUri(okURI),
+          'https://www.google.com/'
+        );
+      });
+    });
+  });
+
+  describe('fetchAnnotationCount', () => {
+    const badgeURL = `${settings.apiUrl}/badge`;
+    let fetchStub;
+
+    beforeEach(() => {
+      fetchStub = sinon.stub(window, 'fetch').resolves(
+        new Response('{"total": 1}', {
+          status: 200,
+          headers: {},
+        })
+      );
+    });
+
+    afterEach(() => {
+      window.fetch.restore();
     });
 
     it('returns value from API service', () => {
       return uriInfo
-        .getAnnotationCount('http://www.example.com')
+        .fetchAnnotationCount('http://www.example.com')
         .then(result => {
           assert.equal(result, 1);
         });
     });
 
+    it('sends the correct fetch request', () => {
+      return uriInfo.fetchAnnotationCount('http://tabUrl.com').then(() => {
+        assert.equal(fetchStub.callCount, 1);
+        assert.deepEqual(fetchStub.lastCall.args, [
+          badgeURL + '?uri=http%3A%2F%2FtabUrl.com',
+          { credentials: 'include' },
+        ]);
+      });
+    });
+
+    it('urlencodes the URL appropriately', () => {
+      return uriInfo
+        .fetchAnnotationCount('http://foo.com?bar=baz qüx')
+        .then(() => {
+          assert.equal(fetchStub.callCount, 1);
+          assert.equal(
+            fetchStub.lastCall.args[0],
+            badgeURL + '?uri=http%3A%2F%2Ffoo.com%3Fbar%3Dbaz+q%C3%BCx'
+          );
+        });
+    });
+
     ['{"total": "not a valid number"}', '{"rows": []}', '{"foop": 5}'].forEach(
       badBody => {
-        it('throws an error if the reponse has an incorrect format', () => {
+        it('throws an error if the response has an incorrect format', () => {
           fetchStub.resolves(
             new Response(badBody, {
               status: 200,
@@ -93,7 +116,7 @@ describe('background/uri-info', () => {
             })
           );
           return uriInfo
-            .getAnnotationCount('http://www.example.com')
+            .fetchAnnotationCount('http://www.example.com')
             .catch(error => {
               assert.strictEqual(
                 error.message,
@@ -104,7 +127,7 @@ describe('background/uri-info', () => {
       }
     );
 
-    it('throws an error if the reponse is not valid JSON', () => {
+    it('throws an error if the response is not valid JSON', () => {
       fetchStub.resolves(
         new Response('this is not valid json', {
           status: 200,
@@ -112,7 +135,7 @@ describe('background/uri-info', () => {
         })
       );
       return uriInfo
-        .getAnnotationCount('http://www.example.com')
+        .fetchAnnotationCount('http://www.example.com')
         .catch(error => {
           assert.instanceOf(error, SyntaxError);
         });
@@ -122,7 +145,7 @@ describe('background/uri-info', () => {
       fetchStub.rejects('Network error');
 
       return uriInfo
-        .getAnnotationCount('http://www.example.com')
+        .fetchAnnotationCount('http://www.example.com')
         .catch(error => {
           assert.strictEqual(error.name, 'Network error');
         });

@@ -2,13 +2,9 @@ import settings from './settings';
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
-<<<<<<< HEAD
 // The following sites are personal in nature, high potential traffic
 // and URLs don't correspond to identifiable content
 const BLOCKED_HOSTNAMES = new Set([
-=======
-const BLOCK_HOSTNAMES = new Set([
->>>>>>> 76ad668... Reduce the number of badge requests
   'facebook.com',
   'www.facebook.com',
   'mail.google.com',
@@ -20,35 +16,27 @@ function encodeUriQuery(val) {
 }
 
 /**
- * Based on the request protocol and hostname decide if the URL should be sent to the "badge"
+ * Based on the protocol and hostname of the URI decides if the URL should be sent to the "badge"
  * request endpoint.
  *
  * @param {string} uri
-<<<<<<< HEAD
- * @return {boolean} - false if the URL should not be sent to the "badge" request endpoint
-=======
- * @return {boolean} - false if the requested URL is not be sent to the "badge" request,
- *                     otherwise true.
->>>>>>> 76ad668... Reduce the number of badge requests
+ * @return {string} - URL without fragment
+ * @throws Will throw if URL is invalid or should not be sent to the 'badge' request endpoint
  */
-function shouldQueryUri(uri) {
-  let url;
-
-  try {
-    url = new URL(uri);
-  } catch (e) {
-    return false;
-  }
+export function shouldQueryUri(uri) {
+  const url = new URL(uri);
 
   if (!ALLOWED_PROTOCOLS.has(url.protocol)) {
-    return false;
+    throw new Error('Blocked protocol');
   }
 
   if (BLOCKED_HOSTNAMES.has(url.hostname)) {
-    return false;
+    throw new Error('Blocked hostname');
   }
 
-  return true;
+  url.hash = '';
+
+  return url.toString();
 }
 
 /**
@@ -56,8 +44,9 @@ function shouldQueryUri(uri) {
  * statistics about the annotations for a given URL.
  *
  * @return {Promise<number>}
+ * @throws Will throw a variety of errors: network, json parsing, or wrong format errors.
  */
-async function query(uri) {
+export async function fetchAnnotationCount(uri) {
   const response = await fetch(
     settings.apiUrl + '/badge?uri=' + encodeUriQuery(uri),
     {
@@ -72,19 +61,4 @@ async function query(uri) {
   }
 
   throw new Error('Unable to parse badge response');
-}
-
-/**
- * Retrieve the count of available annotations for `uri`
- *
- * @return {Promise<number>} - Annotation count for `uri`. Will be 0 if URI
- *                             has a blocklist match.
- * @throws Will throw a variety of errors: network, json parsing, or wrong format errors.
- */
-export function getAnnotationCount(uri) {
-  if (!shouldQueryUri(uri)) {
-    return Promise.resolve(0);
-  }
-
-  return query(uri);
 }
