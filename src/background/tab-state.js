@@ -1,4 +1,5 @@
 import isShallowEqual from 'is-equal-shallow';
+import { CancelledRequestError as RequestError } from './errors';
 
 import * as uriInfo from './uri-info';
 
@@ -168,7 +169,7 @@ export default function TabState(initialState, onchange) {
 
     pendingRequest?.cancel();
 
-    const debouncedFetch = new Promise(resolve => {
+    const debouncedFetch = new Promise((resolve, reject) => {
       const timerId = setTimeout(async () => {
         let count;
         try {
@@ -183,14 +184,22 @@ export default function TabState(initialState, onchange) {
       pendingAnnotationCountRequests.set(tabId, {
         cancel: () => {
           clearTimeout(timerId);
-          resolve(0);
+          reject(new RequestError('Badge request cancelled'));
         },
         waitMs: wait * 2,
       });
     });
 
-    const annotationCount = await debouncedFetch;
-    this.setState(tabId, { annotationCount });
+    try {
+      const annotationCount = await debouncedFetch;
+      this.setState(tabId, { annotationCount });
+    } catch (error) {
+      if (error instanceof RequestError) {
+        // Do nothing
+        return;
+      }
+      throw error;
+    }
   };
 
   this.load(initialState || {});
